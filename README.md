@@ -35,6 +35,7 @@ daemon TCPCheck
    no shutdown
 ```
 
+```
 Config Option explanation:
     - CHECKINTERVAL is the time in seconds to check the HTTP/S Neighbor(s). Default is 5 seconds.
     - FAILCOUNT is the number of times/iterations that the neighbor must fail before
@@ -52,7 +53,7 @@ declaring the neighbor is down and executing config changes. This parameter is o
     after recovery of Neighbor. Mandatory parameter.
     - REGEX is a regular expression to use to check the output of the http response. Mandatory parameter.
     - URLPATH is the specific path when forming the full URL. This is optional. Default is just the root '/'.
-
+```
 
 The CONF_FAIL and CONF_RECOVER files are just a list of commands to run at failure or at recovery. These commands
 must be full commands just as if you were configuration the switch from the CLI.
