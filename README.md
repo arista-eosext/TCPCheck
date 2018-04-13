@@ -142,10 +142,10 @@ Apr 13 21:56:21 DC1-SPINE1 TCPCheck-ALERT-AGENT[18008]: HTTP host back up. Chang
 
 
 # INSTALLATION:
-Because newer releases of EOS require a SysdbMountProfile, you'll need two files - TCPCheck.py and IPCheck.
+Because newer releases of EOS require a SysdbMountProfile, you'll need two files - TCPCheck.py and TCPCheck.
 TCPCheck.py will need to go to an appropriate location such as /mnt/flash and TCPCheck will need to be placed in 
 /usr/lib/SysdbMountProfiles. The mount profile file name MUST match the python file name. In other words, if 
-you place the mount profile IPCheck in /usr/lib/SysdbMountProfiles as TCPCheck, then the executable filename TCPCheck.py 
+you place the mount profile TCPCheck in /usr/lib/SysdbMountProfiles as TCPCheck, then the executable filename TCPCheck.py 
 must be changed to TCPCheck. The filename (agent name) and mount profile name must be the same.
 
 An RPM has been included that allows you to easily just install TCPCheck as an extension and it takes care of all
