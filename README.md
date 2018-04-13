@@ -83,6 +83,14 @@ This is of course just an example, and your use case would determine what config
 This requires EOS SDK.
 All new EOS releases include the SDK.
 
+Additionally, the switch that you install this on needs to use Unix Domain sockets for eAPI. This is enabled under management api.
+
+```
+management api http-commands
+   protocol unix-socket
+   no shutdown
+``` 
+
 ## Example
 
 ### Output of 'show daemon' command
