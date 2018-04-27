@@ -24,6 +24,7 @@ daemon TCPCheck
    option URLPATH value /explorer.html
    option PASSWORD value 4me2know
    option REGEX value eAPI
+   option VRF value mgmt
    no shutdown
 
 This requires the EOS SDK extension installed if its < EOS 4.17.0 release.
@@ -46,6 +47,7 @@ declaring the neighbor is down and executing config changes. This is optional. T
     after recovery of Neighbor. Mandatory parameter.
     - REGEX is a regular expression to use to check the output of the http response. Mandatory parameter.
     - URLPATH is the specific path when forming the full URL. This is optional.
+    - VRF is the VRF name to use for sending health checks. This is optional. If unset, then default VRF is used.
 
 
 The CONF_FAIL and CONF_RECOVER files are just a list of commands to run at either Failure or at recovery. These commands
@@ -71,6 +73,8 @@ This is of course just an example, and your use case would determine what config
 # ----------
 # Version 1.0.0  - 04/11/2018 - Jeremy Georges -- jgeorges@arista.com --  Initial Version
 # Version 1.0.1  - 04/12/2018 - Jeremy Georges -- jgeorges@arista.com --  Format changes,HTTP REQ timeout added & URLPATH added
+# Version 2.0.0  - 04/26/2018 - Jeremy Georges -- jgeorges@arista.com --  Added support for VRFs. Changed http code to use sockets
+#                                                                         as this is currently the only supported method within SDK.
 #
 #*************************************************************************************
 #
@@ -90,7 +94,7 @@ FAILCOUNT=2
 #
 
 #Default HTTP Request timeout in seconds
-HTTPTIMEOUT=20
+HTTPTIMEOUT=15
 
 # We need a global variable to use for failure counts. When we reach FAILCOUNT, then we'll
 #consider host/http down.
@@ -100,6 +104,10 @@ FAILITERATION=0
 #basic configuration check
 CONFIGCHECK=1
 
+
+#Packetbuffer size for socket.recv()
+PACKETSIZE=20000
+
 #****************************
 #*     MODULES              *
 #****************************
@@ -107,21 +115,25 @@ CONFIGCHECK=1
 import sys
 import syslog
 import eossdk
-import requests
 import re
 import jsonrpclib
+import socket
+import base64
+import ssl
 
 #***************************
 #*     CLASSES          *
 #***************************
-class TCPCheckAgent(eossdk.AgentHandler, eossdk.TimeoutHandler):
-    def __init__(self, sdk, timeoutMgr):
+class TCPCheckAgent(eossdk.AgentHandler, eossdk.TimeoutHandler, eossdk.VrfHandler):
+    def __init__(self, sdk, timeoutMgr, VrfMgr):
         self.agentMgr = sdk.get_agent_mgr()
         self.tracer = eossdk.Tracer("TCPCheckPythonAgent")
         eossdk.AgentHandler.__init__(self, self.agentMgr)
         #Setup timeout handler
         eossdk.TimeoutHandler.__init__(self, timeoutMgr)
         self.tracer.trace0("Python agent constructed")
+        eossdk.VrfHandler.__init__(self, VrfMgr)
+        self.VrfMgr = VrfMgr
 
 
     def on_initialized(self):
@@ -142,6 +154,7 @@ class TCPCheckAgent(eossdk.AgentHandler, eossdk.TimeoutHandler):
         self.on_agent_option("PASSWORD", self.agentMgr.agent_option("PASSWORD"))
         self.on_agent_option("REGEX", self.agentMgr.agent_option("REGEX"))
         self.on_agent_option("URLPATH", self.agentMgr.agent_option("URLPATH"))
+        self.on_agent_option("VRF", self.agentMgr.agent_option("VRF"))
 
 
 
@@ -149,29 +162,25 @@ class TCPCheckAgent(eossdk.AgentHandler, eossdk.TimeoutHandler):
         #Note these are only variables that we have defaults for if user does not
         #override the value. Everything else, we'll reference the values directly
         #with agent.Mgr.agent_option("xyz")
-        TESTINTERVAL = self.agentMgr.agent_option("CHECKINTERVAL")
         global CHECKINTERVAL
-        if TESTINTERVAL:
-            CHECKINTERVAL = TESTINTERVAL
+        if self.agentMgr.agent_option("CHECKINTERVAL"):
             self.on_agent_option("CHECKINTERVAL", self.agentMgr.agent_option("CHECKINTERVAL"))
         else:
             #global CHECKINTERVAL
             #We'll just use the default time specified by global variable
             self.agentMgr.status_set("CHECKINTERVAL:", "%s" % CHECKINTERVAL)
 
-        TESTFAILCOUNT = self.agentMgr.agent_option("FAILCOUNT")
         global FAILCOUNT
-        if TESTFAILCOUNT:
-            FAILCOUNT = TESTFAILCOUNT
+        if self.agentMgr.agent_option("FAILCOUNT"):
             self.on_agent_option("FAILCOUNT", self.agentMgr.agent_option("FAILCOUNT"))
         else:
             #We'll just use the default failcount specified by global variable
             self.agentMgr.status_set("FAILCOUNT: ", "%s" % FAILCOUNT)
 
-        TESTHTTPTIMEOUT = self.agentMgr.agent_option("HTTPTIMEOUT")
+
+        #TO DO - Need to change this for new socket timeout.
         global HTTPTIMEOUT
-        if TESTHTTPTIMEOUT:
-            HTTPTIMEOUT = TESTHTTPTIMEOUT
+        if self.agentMgr.agent_option("HTTPTIMEOUT"):
             self.on_agent_option("HTTPTIMEOUT", self.agentMgr.agent_option("HTTPTIMEOUT"))
         else:
             #Since agent_option is not set, we'll just use the default HTTPTIMEOUT specified by global variable
@@ -203,10 +212,9 @@ class TCPCheckAgent(eossdk.AgentHandler, eossdk.TimeoutHandler):
         global CONFIGCHECK
         global HTTPTIMEOUT
 
-        #We need to set the status variables here, in case user makes changes to config after initial config.
-        #self.agentMgr.status_set("HTTPTIMEOUT:", HTTPTIMEOUT)
 
 
+        #If CONFIGCHECK is not 1 a.k.a. ok, then we won't do anything. It means we have a config error.
         if CONFIGCHECK == 1:
             #Let's check our HTTP Address & REGEX and see if its up or down.
             if self.web_check() == 1:
@@ -233,7 +241,12 @@ class TCPCheckAgent(eossdk.AgentHandler, eossdk.TimeoutHandler):
                     pass
                 else:
                     # These are strings, force them to ints
-                    if int(FAILITERATION) >= int(FAILCOUNT):
+                    if self.agentMgr.agent_option("FAILCOUNT"):
+                        MAXFAILCOUNT = self.agentMgr.agent_option("FAILCOUNT")
+                    else:
+                        #Else we'll use the default value of FAILCOUNT
+                        MAXFAILCOUNT=FAILCOUNT
+                    if int(FAILITERATION) >= int(MAXFAILCOUNT):
                         #Host is definitely down. Change config.
                         #RUN CONF_FAIL
                         self.change_config('FAIL')
@@ -244,7 +257,10 @@ class TCPCheckAgent(eossdk.AgentHandler, eossdk.TimeoutHandler):
 
 
         #Wait for CHECKINTERVAL
-        self.timeout_time_is(eossdk.now() + int(CHECKINTERVAL))
+        if self.agentMgr.agent_option("CHECKINTERVAL"):
+            self.timeout_time_is(eossdk.now() + int(self.agentMgr.agent_option("CHECKINTERVAL")))
+        else:
+            self.timeout_time_is(eossdk.now() + int(CHECKINTERVAL))
 
     def on_agent_option(self, optionName, value):
         #options are a key/value pair
@@ -333,7 +349,13 @@ class TCPCheckAgent(eossdk.AgentHandler, eossdk.TimeoutHandler):
             else:
                 self.tracer.trace3("Adding URLPATH %s" % value)
                 self.agentMgr.status_set("URLPATH:", "%s" % value)
-
+        if optionName == "VRF":
+            if not value:
+                self.tracer.trace3("VRF Deleted")
+                self.agentMgr.status_set("VRF:", "%s" % "Default")
+            else:
+                self.tracer.trace3("Adding VRF %s" % value)
+                self.agentMgr.status_set("VRF:", "%s" % value)
 
 
     def on_agent_enabled(self, enabled):
@@ -374,6 +396,15 @@ class TCPCheckAgent(eossdk.AgentHandler, eossdk.TimeoutHandler):
         if not self.agentMgr.agent_option("CONF_RECOVER"):
             syslog.syslog("CONF_RECOVER parameter is not set. This is a mandatory parameter")
             return 0
+
+        #If VRF option set, check to make sure it really exists.
+        if self.agentMgr.agent_option("VRF"):
+                if not self.VrfMgr.exists(self.agentMgr.agent_option("VRF")):
+                    #This means the VRF does not exist
+                    syslog.syslog("VRF %s does not exist." % self.agentMgr.agent_option("VRF"))
+                    return 0
+
+
         #TO DO
         #Add checks for CONF_FAIL and CONF_RECOVER files. Make sure they at least exist on FS.
 
@@ -385,12 +416,7 @@ class TCPCheckAgent(eossdk.AgentHandler, eossdk.TimeoutHandler):
         This function will do HTTP/HTTPS Request and will return 1 if REGEX is found
         or 0 if not found or there are issues.
         '''
-        IPv4 = self.agentMgr.agent_option("IPv4")
-        PROTO = self.agentMgr.agent_option("PROTOCOL")
-        TCPPORT = self.agentMgr.agent_option("TCPPORT")
-        USERNAME = self.agentMgr.agent_option("USERNAME")
-        PASSWORD = self.agentMgr.agent_option("PASSWORD")
-        REGEX = self.agentMgr.agent_option("REGEX")
+
         global HTTPTIMEOUT
 
         #Let's build the correct URL
@@ -408,26 +434,65 @@ class TCPCheckAgent(eossdk.AgentHandler, eossdk.TimeoutHandler):
             FINALPATH="/"
 
 
-        if self.agentMgr.agent_option("PROTOCOL") == 'https':
-            URL = 'https://%s:%s%s' % (IPv4, TCPPORT,FINALPATH)
+        CRLF="\r\n"
 
+        #Now lets build the request
+        request = 'GET %s HTTP/1.1%s' % (FINALPATH, CRLF)
+        request += 'HOST: %s%s' % (self.agentMgr.agent_option("IPv4"), CRLF)
+        if self.agentMgr.agent_option("USERNAME"):
+            token=base64.b64encode('%s:%s' % (self.agentMgr.agent_option("USERNAME"), self.agentMgr.agent_option("PASSWORD"))).decode("ascii")
+            request += 'Authorization: Basic %s%s' % (token, CRLF)
+        request += 'Connection: close%s' % CRLF
+
+
+        #if self.agentMgr.agent_option("PROTOCOL") == 'https':
+        # ss = ssl.wrap_socket(s, ssl_version=ssl.PROTOCOL_TLSv1)
+        if self.VrfMgr.exists(self.agentMgr.agent_option("VRF")):
+            sock_fd=self.VrfMgr.socket_at(socket.AF_INET,socket.SOCK_STREAM,0,self.agentMgr.agent_option("VRF"))
+            s = socket.fromfd( sock_fd, socket.AF_INET, socket.SOCK_STREAM, 0 )
         else:
-            URL = 'http://%s:%s%s' % (IPv4, TCPPORT,FINALPATH)
-        if not USERNAME:
+            s = socket.socket( socket.AF_INET, socket.SOCK_STREAM, 0 )
+
+        if self.agentMgr.agent_option("PROTOCOL") == 'https':
+            #Wrap in SSL
             try:
-                pagecontent = requests.get(URL, verify=False,timeout=int(HTTPTIMEOUT)).content
-            except requests.exceptions.RequestException as e:
-                self.tracer.trace0("Error when requesting web page %s" % e)
-                return 0
+                # _sock is not a documented argument. We use this so ssl wrap_socket will work, since it
+                # normally requires socket.socket() and does't support socket.fromfd()
+                newsock = socket.socket(socket.AF_INET,socket.SOCK_STREAM,_sock=s)
+                thesocket = ssl.wrap_socket(newsock, ssl_version=ssl.PROTOCOL_TLSv1)
+            except Exception as e:
+                #If we get an issue, lets log this.
+                syslog.syslog("%s" % e)
+                return 1
         else:
-            try:
-                pagecontent = requests.get(URL, auth=(USERNAME, PASSWORD), verify=False,timeout=int(HTTPTIMEOUT)).content
-            except requests.exceptions.RequestException as e:
-                self.tracer.trace0("Error when requesting web page %s" % e)
-                return 0
+            thesocket=s
+
+
+        #Define server address and port
+        serverAddress = ( self.agentMgr.agent_option("IPv4"), int(self.agentMgr.agent_option("TCPPORT")) )
+
+        #Set timeout.
+        if self.agentMgr.agent_option("HTTPTIMEOUT"):
+            thesocket.settimeout(int(self.agentMgr.agent_option("HTTPTIMEOUT")))
+        else:
+            thesocket.settimeout(int(HTTPTIMEOUT))
+        try:
+            thesocket.connect( serverAddress )
+        except:
+            syslog.syslog("Connection Timeout")
+            return 0
+
+
+
+        thesocket.send(CRLF+request+CRLF+CRLF)
+        pagecontent = thesocket.recv(PACKETSIZE)
+        thesocket.close()
+
+
         # We could just return here because we got a page. But it would be more accurate
         #to do a Regex on the content so we know that things are legitimate.
 
+        REGEX = self.agentMgr.agent_option("REGEX")
 
         #Now lets do regex match to make sure we got what was expected.
         if pagecontent:
@@ -487,7 +552,7 @@ class TCPCheckAgent(eossdk.AgentHandler, eossdk.TimeoutHandler):
 def main():
     syslog.openlog(ident="TCPCheck-ALERT-AGENT", logoption=syslog.LOG_PID, facility=syslog.LOG_LOCAL0)
     sdk = eossdk.Sdk()
-    TCPCheck = TCPCheckAgent(sdk, sdk.get_timeout_mgr())
+    TCPCheck = TCPCheckAgent(sdk, sdk.get_timeout_mgr(),sdk.get_vrf_mgr())
     sdk.main_loop(sys.argv)
     # Run the agent until terminated by a signal
 

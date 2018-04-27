@@ -32,6 +32,7 @@ daemon TCPCheck
    option URLPATH value /index.html
    option PASSWORD value 4me2know
    option REGEX value HelloWorld 
+   option VRF value mgmt
    no shutdown
 ```
 
@@ -53,6 +54,7 @@ declaring the neighbor is down and executing config changes. This parameter is o
     after recovery of Neighbor. Mandatory parameter.
     - REGEX is a regular expression to use to check the output of the http response. Mandatory parameter.
     - URLPATH is the specific path when forming the full URL. This is optional. Default is just the root '/'.
+    - VRF is if you want the HTTP requests to use a specific VRF. This is option. The default VRF will be used if not set.
 ```
 
 The CONF_FAIL and CONF_RECOVER files are just a list of commands to run at failure or at recovery. These commands
