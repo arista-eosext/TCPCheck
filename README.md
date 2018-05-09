@@ -64,8 +64,6 @@ For example the above referenced /mnt/flash/failed.conf file could include the f
 shutdown the BGP neighbor on failure:
 
 ```
-enable
-configure
 router bgp 65001.65500
 neighbor 10.1.1.1 shutdown
 ```
@@ -73,25 +71,17 @@ neighbor 10.1.1.1 shutdown
 The recover.conf file would do the opposite and remove the shutdown statement:
 
 ```
-enable
-configure
 router bgp 65001.65500
 no neighbor 10.1.1.1 shutdown
 ```
 
 This is of course just an example, and your use case would determine what config changes you'd make.
 
+Please note, this uses the EOS SDK eAPI interaction module. You do not need to specify 'enable' and 'configure' in your 
+configuration files, because it automatically goes into configuration mode.
 
 This requires EOS SDK.
 All new EOS releases include the SDK.
-
-Additionally, the switch that you install this on needs to use Unix Domain sockets for eAPI. This is enabled under management api.
-
-```
-management api http-commands
-   protocol unix-socket
-   no shutdown
-``` 
 
 ## Example
 
@@ -162,7 +152,7 @@ An RPM has been included that allows you to easily just install TCPCheck as an e
 the file requirements. The RPM also installs the TCPCheck SDK app in /usr/local/bin. This is the preferred distribution 
 method for this application.
 
-This release has been tested on EOS 4.20.1.
+This release has been tested on EOS 4.20.1, 4.20.4 and 4.20.5.
 
 License
 =======

@@ -55,18 +55,17 @@ must be full commands just as if you were configuration the switch from the CLI.
 
 For example the above referenced /mnt/flash/failed.conf file could include the following commands, which would
 shutdown the BGP neighbor on failure:
-enable
-configure
 router bgp 65001.65500
 neighbor 10.1.1.1 shutdown
 
 The recover.conf file would do the opposite and remove the shutdown statement:
-enable
-configure
 router bgp 65001.65500
 no neighbor 10.1.1.1 shutdown
 
 This is of course just an example, and your use case would determine what config changes you'd make.
+
+Please note, because this extension uses the EOS SDK eAPI interation module, you do not need to have 'enable and 'configure' 
+in your config change files. This is because, the EOS SDK eAPI interation module is already in configuration mode.
 '''
 #************************************************************************************
 # Change log
@@ -75,6 +74,8 @@ This is of course just an example, and your use case would determine what config
 # Version 1.0.1  - 04/12/2018 - Jeremy Georges -- jgeorges@arista.com --  Format changes,HTTP REQ timeout added & URLPATH added
 # Version 2.0.0  - 04/26/2018 - Jeremy Georges -- jgeorges@arista.com --  Added support for VRFs. Changed http code to use sockets
 #                                                                         as this is currently the only supported method within SDK.
+# Version 2.1.0  - 05/08/2018 - Jeremy Georges -- jgeorges@arista.com --  Changed eAPI interface to use the eAPI interaction module
+#                                                                         in EosSdk
 #
 #*************************************************************************************
 #
@@ -116,7 +117,6 @@ import sys
 import syslog
 import eossdk
 import re
-import jsonrpclib
 import socket
 import base64
 import ssl
@@ -125,7 +125,7 @@ import ssl
 #*     CLASSES          *
 #***************************
 class TCPCheckAgent(eossdk.AgentHandler, eossdk.TimeoutHandler, eossdk.VrfHandler):
-    def __init__(self, sdk, timeoutMgr, VrfMgr):
+    def __init__(self, sdk, timeoutMgr, VrfMgr,EapiMgr):
         self.agentMgr = sdk.get_agent_mgr()
         self.tracer = eossdk.Tracer("TCPCheckPythonAgent")
         eossdk.AgentHandler.__init__(self, self.agentMgr)
@@ -134,6 +134,7 @@ class TCPCheckAgent(eossdk.AgentHandler, eossdk.TimeoutHandler, eossdk.VrfHandle
         self.tracer.trace0("Python agent constructed")
         eossdk.VrfHandler.__init__(self, VrfMgr)
         self.VrfMgr = VrfMgr
+        self.EapiMgr= EapiMgr
 
 
     def on_initialized(self):
@@ -509,8 +510,8 @@ class TCPCheckAgent(eossdk.AgentHandler, eossdk.TimeoutHandler, eossdk.VrfHandle
     def change_config(self, STATUS):
         '''
         Method to change configuration of switch.
-        If STATUS is FAIL, then run CONF_FAIL via eAPI
-        If STATUS RECOVER (or else) then run CONF_RECOVER via eAPI
+        If STATUS is FAIL, then run CONF_FAIL via eAPI API
+        If STATUS RECOVER (or else) then run CONF_RECOVER via eAPI API
         '''
         CONF_FAIL = self.agentMgr.agent_option("CONF_FAIL")
         CONF_RECOVER = self.agentMgr.agent_option("CONF_RECOVER")
@@ -521,12 +522,18 @@ class TCPCheckAgent(eossdk.AgentHandler, eossdk.TimeoutHandler, eossdk.VrfHandle
             #Strip out the whitespace
             configfile = [x.strip() for x in configfile]
 
+            #Check to make sure user has not specified 'enable' as the first command. This will error  in command mode
+            if configfile[0] == 'enable':
+                del configfile[0]
             #Now apply config changes
-            switch = jsonrpclib.Server("unix:/var/run/command-api.sock")
             try:
-                switch.runCmds(1, [x for x in configfile], "json")
+                applyconfig = self.EapiMgr.run_config_cmds([z for z in configfile])
+                if(applyconfig.success()):
+                    syslog.syslog("Applied Configuration changes from %s" % CONF_FAIL)
+                else:
+                    syslog.syslog("Unable to apply configuration changes from %s" % CONF_FAIL)
             except:
-                syslog.syslog("Unable to apply config via eAPI. Is Unix protocol enabled?")
+                syslog.syslog("Unable to apply config via eAPI interaction module in EOS SDK.")
                 return 0
         else:
             self.tracer.trace0("Status Recover. Applying config changes.")
@@ -535,12 +542,19 @@ class TCPCheckAgent(eossdk.AgentHandler, eossdk.TimeoutHandler, eossdk.VrfHandle
             #Strip out the whitespace
             configfile = [x.strip() for x in configfile]
 
+            #Check to make sure user has not specified 'enable' as the first command. This will error  in command mode
+            if configfile[0] == 'enable':
+                del configfile[0]
+
             #Now apply config changes
-            switch = jsonrpclib.Server("unix:/var/run/command-api.sock")
             try:
-                switch.runCmds(1, [x for x in configfile], "json")
+                applyconfig = self.EapiMgr.run_config_cmds([z for z in configfile])
+                if(applyconfig.success()):
+                    syslog.syslog("Applied Configuration changes from %s" % CONF_RECOVER)
+                else:
+                    syslog.syslog("Unable to apply configuration changes from %s" % CONF_RECOVER)
             except:
-                syslog.syslog("Unable to apply config via eAPI. Is Unix protocol enabled?")
+                syslog.syslog("Unable to apply config via eAPI interaction module in EOS SDK.")
                 return 0
 
         return 1
@@ -552,7 +566,7 @@ class TCPCheckAgent(eossdk.AgentHandler, eossdk.TimeoutHandler, eossdk.VrfHandle
 def main():
     syslog.openlog(ident="TCPCheck-ALERT-AGENT", logoption=syslog.LOG_PID, facility=syslog.LOG_LOCAL0)
     sdk = eossdk.Sdk()
-    TCPCheck = TCPCheckAgent(sdk, sdk.get_timeout_mgr(),sdk.get_vrf_mgr())
+    TCPCheck = TCPCheckAgent(sdk, sdk.get_timeout_mgr(),sdk.get_vrf_mgr(),sdk.get_eapi_mgr())
     sdk.main_loop(sys.argv)
     # Run the agent until terminated by a signal
 
