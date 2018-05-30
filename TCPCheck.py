@@ -75,7 +75,8 @@ in your config change files. This is because, the EOS SDK eAPI interation module
 # Version 2.0.0  - 04/26/2018 - Jeremy Georges -- jgeorges@arista.com --  Added support for VRFs. Changed http code to use sockets
 #                                                                         as this is currently the only supported method within SDK.
 # Version 2.1.0  - 05/08/2018 - Jeremy Georges -- jgeorges@arista.com --  Changed eAPI interface to use the eAPI interaction module
-#                                                                         in EosSdk
+#									  in EosSdk
+# Version 2.1.1  - 05/30/2018 - Jeremy Georges -- jgeorges@arista.com --  Bug fix with non VRF socket call 
 #
 #*************************************************************************************
 #
@@ -459,8 +460,12 @@ class TCPCheckAgent(eossdk.AgentHandler, eossdk.TimeoutHandler, eossdk.VrfHandle
             try:
                 # _sock is not a documented argument. We use this so ssl wrap_socket will work, since it
                 # normally requires socket.socket() and does't support socket.fromfd()
-                newsock = socket.socket(socket.AF_INET,socket.SOCK_STREAM,_sock=s)
-                thesocket = ssl.wrap_socket(newsock, ssl_version=ssl.PROTOCOL_TLSv1)
+                #we only need to do this if we are in a VRF.
+                if self.VrfMgr.exists(self.agentMgr.agent_option("VRF")):
+                    newsock = socket.socket(socket.AF_INET,socket.SOCK_STREAM,_sock=s)
+                    thesocket = ssl.wrap_socket(newsock, ssl_version=ssl.PROTOCOL_TLSv1)
+                else:
+                    thesocket = ssl.wrap_socket(s, ssl_version=ssl.PROTOCOL_TLSv1)
             except Exception as e:
                 #If we get an issue, lets log this.
                 syslog.syslog("%s" % e)
@@ -471,7 +476,6 @@ class TCPCheckAgent(eossdk.AgentHandler, eossdk.TimeoutHandler, eossdk.VrfHandle
 
         #Define server address and port
         serverAddress = ( self.agentMgr.agent_option("IPv4"), int(self.agentMgr.agent_option("TCPPORT")) )
-
         #Set timeout.
         if self.agentMgr.agent_option("HTTPTIMEOUT"):
             thesocket.settimeout(int(self.agentMgr.agent_option("HTTPTIMEOUT")))
@@ -488,7 +492,6 @@ class TCPCheckAgent(eossdk.AgentHandler, eossdk.TimeoutHandler, eossdk.VrfHandle
         thesocket.send(CRLF+request+CRLF+CRLF)
         pagecontent = thesocket.recv(PACKETSIZE)
         thesocket.close()
-
 
         # We could just return here because we got a page. But it would be more accurate
         #to do a Regex on the content so we know that things are legitimate.
