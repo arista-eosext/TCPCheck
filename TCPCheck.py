@@ -64,7 +64,7 @@ no neighbor 10.1.1.1 shutdown
 
 This is of course just an example, and your use case would determine what config changes you'd make.
 
-Please note, because this extension uses the EOS SDK eAPI interation module, you do not need to have 'enable and 'configure' 
+Please note, because this extension uses the EOS SDK eAPI interation module, you do not need to have 'enable and 'configure'
 in your config change files. This is because, the EOS SDK eAPI interation module is already in configuration mode.
 '''
 #************************************************************************************
@@ -76,39 +76,19 @@ in your config change files. This is because, the EOS SDK eAPI interation module
 #                                                                         as this is currently the only supported method within SDK.
 # Version 2.1.0  - 05/08/2018 - Jeremy Georges -- jgeorges@arista.com --  Changed eAPI interface to use the eAPI interaction module
 #									  in EosSdk
-# Version 2.1.1  - 05/30/2018 - Jeremy Georges -- jgeorges@arista.com --  Bug fix with non VRF socket call 
-#
+# Version 2.1.1  - 05/30/2018 - Jeremy Georges -- jgeorges@arista.com --  Bug fix with non VRF socket call
+# Version 2.2.0  - 05/14/2019 - Jeremy Georges -- jgeorges@arista.com -- Add a reason string to on_agent_enabled(self, enabled,reason=None)
+#                                                                        to display why the agent is disabled (e.g. missing fail/recovery file)
+# Version 2.3.0  - 05/28/2020 - Jeremy Georges -- jgeorges@arista.com -- Added additional exception handling and File Descriptor cleanup.
 #*************************************************************************************
 #
 #
 #****************************
 #GLOBAL VARIABLES -         *
 #****************************
-# These are the defaults. The config can override these
-#Default check Interval in seconds
-CHECKINTERVAL=5
-#
-#CURRENTSTATUS   1 is Good, 0 is Down
-CURRENTSTATUS=1
+__author__ = 'Jeremy Georges'
+__version__ = '2.3.0'
 
-#Default number of failures before determining a down neighbor
-FAILCOUNT=2
-#
-
-#Default HTTP Request timeout in seconds
-HTTPTIMEOUT=15
-
-# We need a global variable to use for failure counts. When we reach FAILCOUNT, then we'll
-#consider host/http down.
-FAILITERATION=0
-
-#CONFIGCHECK 1 if the config looks ok, 0 if bad. Will set this as semaphore for
-#basic configuration check
-CONFIGCHECK=1
-
-
-#Packetbuffer size for socket.recv()
-PACKETSIZE=20000
 
 #****************************
 #*     MODULES              *
@@ -121,6 +101,7 @@ import re
 import socket
 import base64
 import ssl
+import os
 
 #***************************
 #*     CLASSES          *
@@ -138,9 +119,38 @@ class TCPCheckAgent(eossdk.AgentHandler, eossdk.TimeoutHandler, eossdk.VrfHandle
         self.EapiMgr= EapiMgr
 
 
+
+        # These are the defaults. The config can override these
+        #Default check Interval in seconds
+        self.CHECKINTERVAL=5
+        #
+        #CURRENTSTATUS   1 is Good, 0 is Down
+        self.CURRENTSTATUS=1
+
+        #Default number of failures before determining a down neighbor
+        self.FAILCOUNT=2
+        #
+
+        #Default HTTP Request timeout in seconds
+        self.HTTPTIMEOUT=15
+
+        # We need a global variable to use for failure counts. When we reach FAILCOUNT, then we'll
+        #consider host/http down.
+        self.FAILITERATION=0
+
+        #CONFIGCHECK 1 if the config looks ok, 0 if bad. Will set this as semaphore for
+        #basic configuration check
+        self.CONFIGCHECK=1
+
+
+        #Packetbuffer size for socket.recv()
+        self.PACKETSIZE=20000
+
+
     def on_initialized(self):
+        global __version__
         self.tracer.trace0("Initialized")
-        syslog.syslog("TCPCheck Initialized")
+        syslog.syslog("TCPCheck Version %s Initialized" % __version__)
         self.agentMgr.status_set("Status:", "Administratively Up")
         #Lets check and set our state for each option during initialization.
         #i.e. after you do a 'no shut' on the daemon, we'll check each of these
@@ -164,39 +174,38 @@ class TCPCheckAgent(eossdk.AgentHandler, eossdk.TimeoutHandler, eossdk.VrfHandle
         #Note these are only variables that we have defaults for if user does not
         #override the value. Everything else, we'll reference the values directly
         #with agent.Mgr.agent_option("xyz")
-        global CHECKINTERVAL
+
         if self.agentMgr.agent_option("CHECKINTERVAL"):
             self.on_agent_option("CHECKINTERVAL", self.agentMgr.agent_option("CHECKINTERVAL"))
         else:
             #global CHECKINTERVAL
             #We'll just use the default time specified by global variable
-            self.agentMgr.status_set("CHECKINTERVAL:", "%s" % CHECKINTERVAL)
+            self.agentMgr.status_set("CHECKINTERVAL:", "%s" % self.CHECKINTERVAL)
 
-        global FAILCOUNT
+
         if self.agentMgr.agent_option("FAILCOUNT"):
             self.on_agent_option("FAILCOUNT", self.agentMgr.agent_option("FAILCOUNT"))
         else:
             #We'll just use the default failcount specified by global variable
-            self.agentMgr.status_set("FAILCOUNT: ", "%s" % FAILCOUNT)
+            self.agentMgr.status_set("FAILCOUNT: ", "%s" % self.FAILCOUNT)
 
 
         #TO DO - Need to change this for new socket timeout.
-        global HTTPTIMEOUT
+
         if self.agentMgr.agent_option("HTTPTIMEOUT"):
             self.on_agent_option("HTTPTIMEOUT", self.agentMgr.agent_option("HTTPTIMEOUT"))
         else:
             #Since agent_option is not set, we'll just use the default HTTPTIMEOUT specified by global variable
-            self.agentMgr.status_set("HTTPTIMEOUT:", "%s" % HTTPTIMEOUT)
+            self.agentMgr.status_set("HTTPTIMEOUT:", "%s" % self.HTTPTIMEOUT)
 
 
         #Some basic mandatory variable checks. We'll check this when we have a
         #no shut on the daemon. Add some notes in comment and Readme.md to recommend
         #a shut and no shut every time you make parameter changes...
-        global CONFIGCHECK
         if self.check_vars() == 1:
-            CONFIGCHECK = 1
+            self.CONFIGCHECK = 1
         else:
-            CONFIGCHECK = 0
+            self.CONFIGCHECK = 0
         #Start our handler now.
         self.agentMgr.status_set("HealthStatus:", "Unknown")
         self.timeout_time_is(eossdk.now())
@@ -205,40 +214,31 @@ class TCPCheckAgent(eossdk.AgentHandler, eossdk.TimeoutHandler, eossdk.VrfHandle
         '''
          This is the function/method where we do the exciting stuff :-)
         '''
-        #Global variables are needed
-        global CHECKINTERVAL
-        global FAILCOUNT
-        global CONFIGCHECK
-        global FAILITERATION
-        global CURRENTSTATUS
-        global CONFIGCHECK
-        global HTTPTIMEOUT
-
-
 
         #If CONFIGCHECK is not 1 a.k.a. ok, then we won't do anything. It means we have a config error.
-        if CONFIGCHECK == 1:
+        if self.CONFIGCHECK == 1:
             #Let's check our HTTP Address & REGEX and see if its up or down.
-            if self.web_check() == 1:
+            _web_check = self.web_check()
+            if _web_check == 1:
                 #Now we have to do all our health checking logic here...
                 #If we are here, then we are up
                 self.agentMgr.status_set("HealthStatus:", "UP")
-                if CURRENTSTATUS == 0:
+                if self.CURRENTSTATUS == 0:
                     #We were down but now up,so now let's change the configuration and set CURRENTSTATUS to 1
                     #Run CONF_RECOVER ********
                     self.change_config('RECOVER')
                     syslog.syslog("HTTP host back up. Changing Configuration.")
-                    CURRENTSTATUS = 1
-                    FAILITERATION = 0
-                elif FAILITERATION > 0:
+                    self.CURRENTSTATUS = 1
+                    self.FAILITERATION = 0
+                elif self.FAILITERATION > 0:
                     #This means we had at least one miss but we did not change config, just log and reset variable to 0
                     syslog.syslog("HTTP host back up. Clearing FAILITERATION semaphore.")
                     self.agentMgr.status_set("HealthStatus:", "UP")
-                    FAILITERATION = 0
-            else:
+                    self.FAILITERATION = 0
+            elif _web_check == 0:
                 #We are down
-                FAILITERATION += 1
-                if CURRENTSTATUS == 0:
+                self.FAILITERATION += 1
+                if self.CURRENTSTATUS == 0:
                     #This means we've already changed config. Do nothing.
                     pass
                 else:
@@ -247,22 +247,24 @@ class TCPCheckAgent(eossdk.AgentHandler, eossdk.TimeoutHandler, eossdk.VrfHandle
                         MAXFAILCOUNT = self.agentMgr.agent_option("FAILCOUNT")
                     else:
                         #Else we'll use the default value of FAILCOUNT
-                        MAXFAILCOUNT=FAILCOUNT
-                    if int(FAILITERATION) >= int(MAXFAILCOUNT):
+                        MAXFAILCOUNT=self.FAILCOUNT
+                    if int(self.FAILITERATION) >= int(MAXFAILCOUNT):
                         #Host is definitely down. Change config.
                         #RUN CONF_FAIL
                         self.change_config('FAIL')
                         self.agentMgr.status_set("HealthStatus:", "FAIL")
-                        CURRENTSTATUS = 0
+                        self.CURRENTSTATUS = 0
                         syslog.syslog("HTTP HOST is down. Changing configuration.")
 
-
+            else:
+                #We get here if we had some weird exception
+                syslog.syslog("TCPCheck - An exception occurred. Skipping to next interval")
 
         #Wait for CHECKINTERVAL
         if self.agentMgr.agent_option("CHECKINTERVAL"):
             self.timeout_time_is(eossdk.now() + int(self.agentMgr.agent_option("CHECKINTERVAL")))
         else:
-            self.timeout_time_is(eossdk.now() + int(CHECKINTERVAL))
+            self.timeout_time_is(eossdk.now() + int(self.CHECKINTERVAL))
 
     def on_agent_option(self, optionName, value):
         #options are a key/value pair
@@ -326,21 +328,21 @@ class TCPCheckAgent(eossdk.AgentHandler, eossdk.TimeoutHandler, eossdk.VrfHandle
         if optionName == "HTTPTIMEOUT":
             if not value:
                 self.tracer.trace3("HTTPTIMEOUT Deleted")
-                self.agentMgr.status_set("HTTPTIMEOUT:", HTTPTIMEOUT)
+                self.agentMgr.status_set("HTTPTIMEOUT:", self.HTTPTIMEOUT)
             else:
                 self.tracer.trace3("Adding HTTPTIMEOUT %s" % value)
                 self.agentMgr.status_set("HTTPTIMEOUT:", "%s" % value)
         if optionName == "FAILCOUNT":
             if not value:
                 self.tracer.trace3("FAILCOUNT Deleted")
-                self.agentMgr.status_set("FAILCOUNT:", FAILCOUNT)
+                self.agentMgr.status_set("FAILCOUNT:", self.FAILCOUNT)
             else:
                 self.tracer.trace3("Adding FAILCOUNT %s" % value)
                 self.agentMgr.status_set("FAILCOUNT:", "%s" % value)
         if optionName == "CHECKINTERVAL":
             if not value:
                 self.tracer.trace3("CHECKINTERVAL Deleted")
-                self.agentMgr.status_set("CHECKINTERVAL:", CHECKINTERVAL)
+                self.agentMgr.status_set("CHECKINTERVAL:", self.CHECKINTERVAL)
             else:
                 self.tracer.trace3("Adding CHECKINTERVAL %s" % value)
                 self.agentMgr.status_set("CHECKINTERVAL:", "%s" % value)
@@ -360,43 +362,67 @@ class TCPCheckAgent(eossdk.AgentHandler, eossdk.TimeoutHandler, eossdk.VrfHandle
                 self.agentMgr.status_set("VRF:", "%s" % value)
 
 
-    def on_agent_enabled(self, enabled):
+    def on_agent_enabled(self, enabled,reason=None):
         #When shutdown set status and then shutdown
         if not enabled:
-            self.tracer.trace0("Shutting down")
-            self.agentMgr.status_del("Status:")
-            self.agentMgr.status_set("Status:", "Administratively Down")
-            self.agentMgr.agent_shutdown_complete_is(True)
+         self.tracer.trace0("Shutting down")
+         self.agentMgr.status_del("Status:")
+         if reason is not None:
+             self.agentMgr.status_set("Status:", "Administratively Down - %s" % reason)
+         else:
+             self.agentMgr.status_set("Status:", "Administratively Down")
+         self.agentMgr.agent_shutdown_complete_is(True)
 
     def check_vars(self):
         '''
         Do some basic config checking. Return 1 if all is good. Else return
         0 if config is missing a key parameter and send a syslog message so user
         knows what is wrong.
-        Very basic existance testing here. Maybe add later some syntax testing...
+        Very basic existance testing here. Maybe add later some greater syntax testing...
         '''
         if not self.agentMgr.agent_option("TCPPORT"):
             syslog.syslog("TCPPORT Parameter is not set. This is a mandatory parameter")
+            self.on_agent_enabled(enabled=False, reason='TCPPORT Parameter is not set')
             return 0
         if not self.agentMgr.agent_option("PROTOCOL"):
             syslog.syslog("PROTOCOL parameter is not set. This is a mandatory parameter")
+            self.on_agent_enabled(enabled=False, reason='PROTOCOL Parameter is not set')
             return 0
         if self.agentMgr.agent_option("PROTOCOL") not in ('http', 'https'):
             syslog.syslog("PROTOCOL parameter is not valid. Parameter must be http or https")
+            self.on_agent_enabled(enabled=False, reason='PROTOCOL parameter is not valid')
             return 0
         if not self.agentMgr.agent_option("IPv4"):
             syslog.syslog("IPv4 parameter is not set. This is a mandatory parameter")
+            self.on_agent_enabled(enabled=False, reason='IPv4 parameter is not set')
             return 0
         if not self.agentMgr.agent_option("REGEX"):
             syslog.syslog("REGEX parameter is not set. This is a mandatory parameter")
+            self.on_agent_enabled(enabled=False, reason='REGEX parameter is not set')
             return 0
         #Should add some basic file checking here...i.e. make sure the following files
         #actually exist.
         if not self.agentMgr.agent_option("CONF_FAIL"):
             syslog.syslog("CONF_FAIL parameter is not set. This is a mandatory parameter")
+            self.on_agent_enabled(enabled=False, reason='CONF_FAIL parameter is not set')
             return 0
         if not self.agentMgr.agent_option("CONF_RECOVER"):
             syslog.syslog("CONF_RECOVER parameter is not set. This is a mandatory parameter")
+            self.on_agent_enabled(enabled=False, reason='CONF_RECOVER parameter is not set')
+            return 0
+
+        #Check to see if files exist
+        if self.agentMgr.agent_option("CONF_FAIL"):
+            CONFFAILFILE = os.path.isfile(self.agentMgr.agent_option("CONF_FAIL"))
+        if not CONFFAILFILE:
+            syslog.syslog("CONF_FAIL file does NOT exist")
+            self.on_agent_enabled(enabled=False, reason='CONF_FAIL file missing')
+            return 0
+        if self.agentMgr.agent_option("CONF_RECOVER"):
+            CONFRECOVERFILE = os.path.isfile(self.agentMgr.agent_option("CONF_RECOVER"))
+        if not CONFRECOVERFILE:
+            syslog.syslog("CONF_RECOVER file does NOT exist")
+            self.on_agent_enabled(enabled=False, reason='CONF_RECOVER file missing')
             return 0
 
         #If VRF option set, check to make sure it really exists.
@@ -404,11 +430,8 @@ class TCPCheckAgent(eossdk.AgentHandler, eossdk.TimeoutHandler, eossdk.VrfHandle
                 if not self.VrfMgr.exists(self.agentMgr.agent_option("VRF")):
                     #This means the VRF does not exist
                     syslog.syslog("VRF %s does not exist." % self.agentMgr.agent_option("VRF"))
+                    self.on_agent_enabled(enabled=False, reason='VRF does not exist')
                     return 0
-
-
-        #TO DO
-        #Add checks for CONF_FAIL and CONF_RECOVER files. Make sure they at least exist on FS.
 
         #If we get here, then we're good!
         return 1
@@ -419,10 +442,7 @@ class TCPCheckAgent(eossdk.AgentHandler, eossdk.TimeoutHandler, eossdk.VrfHandle
         or 0 if not found or there are issues.
         '''
 
-        global HTTPTIMEOUT
-
         #Let's build the correct URL
-
         if self.agentMgr.agent_option("URLPATH"):
             #We have a URLPATH we need to deal with.
             #Let's see if we have a leading / or not.
@@ -450,10 +470,22 @@ class TCPCheckAgent(eossdk.AgentHandler, eossdk.TimeoutHandler, eossdk.VrfHandle
         #if self.agentMgr.agent_option("PROTOCOL") == 'https':
         # ss = ssl.wrap_socket(s, ssl_version=ssl.PROTOCOL_TLSv1)
         if self.VrfMgr.exists(self.agentMgr.agent_option("VRF")):
-            sock_fd=self.VrfMgr.socket_at(socket.AF_INET,socket.SOCK_STREAM,0,self.agentMgr.agent_option("VRF"))
-            s = socket.fromfd( sock_fd, socket.AF_INET, socket.SOCK_STREAM, 0 )
+            try:
+                sock_fd=self.VrfMgr.socket_at(socket.AF_INET,socket.SOCK_STREAM,0,self.agentMgr.agent_option("VRF"))
+                s = socket.fromfd( sock_fd, socket.AF_INET, socket.SOCK_STREAM, 0 )
+            except Exception as e:
+                #If we get an issue, lets log this.
+                syslog.syslog("%s" % e)
+                # TODO
+                return 255
         else:
-            s = socket.socket( socket.AF_INET, socket.SOCK_STREAM, 0 )
+            try:
+                s = socket.socket( socket.AF_INET, socket.SOCK_STREAM, 0 )
+            except Exception as e:
+                #If we get an issue, lets log this.
+                syslog.syslog("%s" % e)
+                # TODO
+                return 255
 
         if self.agentMgr.agent_option("PROTOCOL") == 'https':
             #Wrap in SSL
@@ -469,7 +501,7 @@ class TCPCheckAgent(eossdk.AgentHandler, eossdk.TimeoutHandler, eossdk.VrfHandle
             except Exception as e:
                 #If we get an issue, lets log this.
                 syslog.syslog("%s" % e)
-                return 1
+                return 255
         else:
             thesocket=s
 
@@ -480,7 +512,7 @@ class TCPCheckAgent(eossdk.AgentHandler, eossdk.TimeoutHandler, eossdk.VrfHandle
         if self.agentMgr.agent_option("HTTPTIMEOUT"):
             thesocket.settimeout(int(self.agentMgr.agent_option("HTTPTIMEOUT")))
         else:
-            thesocket.settimeout(int(HTTPTIMEOUT))
+            thesocket.settimeout(int(self.HTTPTIMEOUT))
         try:
             thesocket.connect( serverAddress )
         except:
@@ -490,8 +522,16 @@ class TCPCheckAgent(eossdk.AgentHandler, eossdk.TimeoutHandler, eossdk.VrfHandle
 
 
         thesocket.send(CRLF+request+CRLF+CRLF)
-        pagecontent = thesocket.recv(PACKETSIZE)
+        pagecontent = thesocket.recv(self.PACKETSIZE)
+
+        # Cleanup
+        thesocket.shutdown(socket.SHUT_RD)
         thesocket.close()
+        if self.VrfMgr.exists(self.agentMgr.agent_option("VRF")):
+            # Because eossdk.VrfMgr.socket_at() provides a fileno, we'll just
+            # use os.close.
+            os.close(sock_fd)
+
 
         # We could just return here because we got a page. But it would be more accurate
         #to do a Regex on the content so we know that things are legitimate.
@@ -545,7 +585,7 @@ class TCPCheckAgent(eossdk.AgentHandler, eossdk.TimeoutHandler, eossdk.VrfHandle
             #Strip out the whitespace
             configfile = [x.strip() for x in configfile]
 
-            #Check to make sure user has not specified 'enable' as the first command. This will error  in command mode
+            #Check to make sure user has not specified 'enable' as the first command. This will error in command mode
             if configfile[0] == 'enable':
                 del configfile[0]
 
