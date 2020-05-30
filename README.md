@@ -152,7 +152,7 @@ An RPM has been included that allows you to easily just install TCPCheck as an e
 the file requirements. The RPM also installs the TCPCheck SDK app in /usr/local/bin. This is the preferred distribution 
 method for this application.
 
-This release has been tested on EOS 4.20.1, 4.20.4 and 4.20.5.
+This release has been tested on EOS 4.20.1, 4.20.4, 4.20.5 and 4.24.0.
 
 License
 =======
