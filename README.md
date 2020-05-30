@@ -40,7 +40,7 @@ daemon TCPCheck
 Config Option explanation:
     - CHECKINTERVAL is the time in seconds to check the HTTP/S Neighbor(s). Default is 5 seconds.
     - FAILCOUNT is the number of times/iterations that the neighbor must fail before
-declaring the neighbor is down and executing config changes. This parameter is optional. The default is 2.
+    declaring the neighbor is down and executing config changes. This parameter is optional. The default is 2.
     - IPv4 is the address to check. Mandatory parameter.
     - HTTPTIMEOUT is the time in seconds we wait for an HTTP response. Default is 20 seconds.
     - PROTOCOL is either http,https. This is a mandatory parameter.
@@ -54,7 +54,7 @@ declaring the neighbor is down and executing config changes. This parameter is o
     after recovery of Neighbor. Mandatory parameter.
     - REGEX is a regular expression to use to check the output of the http response. Mandatory parameter.
     - URLPATH is the specific path when forming the full URL. This is optional. Default is just the root '/'.
-    - VRF is if you want the HTTP requests to use a specific VRF. This is option. The default VRF will be used if not set.
+    - VRF is if you want the HTTP requests to use a specific VRF. This is optional. The default VRF will be used if not set.
 ```
 
 The CONF_FAIL and CONF_RECOVER files are just a list of commands to run at failure or at recovery. These commands
@@ -87,56 +87,64 @@ All new EOS releases include the SDK.
 
 ### Output of 'show daemon' command
 ```
-Agent: TCPCheck (shutdown)
+Agent: TCPCheck (running with PID 14743)
+Uptime: 0:11:18 (Start time: Sat May 30 17:19:58 2020)
 Configuration:
-Option              Value                   
-------------------- ----------------------- 
-CHECKINTERVAL       5                       
-CONF_FAIL           /mnt/flash/failed.conf  
-CONF_RECOVER        /mnt/flash/recover.conf 
-FAILCOUNT           2                       
-IPv4                10.1.1.1                
-PASSWORD            4me2know                
-PROTOCOL            https                   
-REGEX               eAPI                    
-TCPPORT             443                     
-URLPATH             /explorer.html          
-USERNAME            admin                   
+Option              Value
+------------------- -----------------------
+CHECKINTERVAL       5
+CONF_FAIL           /mnt/flash/failed.conf
+CONF_RECOVER        /mnt/flash/recover.conf
+FAILCOUNT           2
+HTTPTIMEOUT         10
+IPv4                192.168.100.103
+PASSWORD            4me2know
+PROTOCOL            https
+REGEX               Arista
+TCPPORT             443
+URLPATH             /explorer.html
+USERNAME            admin
+VRF                 mgmt
 
 Status:
-Data                     Value                   
------------------------- ----------------------- 
-CHECKINTERVAL:           5                       
-CONF_FAIL:               /mnt/flash/failed.conf  
-CONF_RECOVER:            /mnt/flash/recover.conf 
-FAILCOUNT:               2                       
-HTTPTIMEOUT:             20                      
-HealthStatus:            UP                      
-IPv4 Address List:       10.1.1.1                
-PASSWORD:                4me2know                
-PROTOCOL:                https                   
-REGEX:                   eAPI                    
-Status:                  Administratively Down   
-TCPPORT:                 443                     
-URLPATH:                 /explorer.html          
-USERNAME:                admin    
+Data                     Value
+------------------------ -----------------------
+CHECKINTERVAL:           5
+CONF_FAIL:               /mnt/flash/failed.conf
+CONF_RECOVER:            /mnt/flash/recover.conf
+FAILCOUNT:               2
+HTTPTIMEOUT:             10
+HealthStatus:            UP
+IPv4 Address List:       192.168.100.103
+PASSWORD:                4me2know
+PROTOCOL:                https
+REGEX:                   Arista
+Status:                  Administratively Up
+TCPPORT:                 443
+URLPATH:                 /explorer.html
+USERNAME:                admin
+VRF:                     mgmt
 ```
 
 ### Syslog Messages
 ```
-Apr 13 21:12:14 DC1-SPINE1 TCPCheck-ALERT-AGENT[13627]: %AGENT-6-INITIALIZED: Agent 'TCPCheck-TCPCheck' initialized; pid=13627
-Apr 13 21:12:14 DC1-SPINE1 TCPCheck-ALERT-AGENT[13627]: TCPCheck Initialized
+May 30 16:48:45 DC1-SPINE-1 TCPCheck-ALERT-AGENT[12335]: %AGENT-6-INITIALIZED: Agent 'TCPCheck-TCPCheck' initialized; pid=12335
+May 30 16:48:45 DC1-SPINE-1 TCPCheck-ALERT-AGENT[12335]: TCPCheck Version 2.3.1 Initialized
 .
 After HTTP Host goes down...
 .
-Apr 13 21:47:31 DC1-SPINE1 ConfigAgent: %SYS-5-CONFIG_I: Configured from console by local_command_api on command-api (unix:)
-Apr 13 21:47:31 DC1-SPINE1 TCPCheck-ALERT-AGENT[18008]: HTTP HOST is down. Changing configuration.
+May 30 16:49:30 DC1-SPINE-1 TCPCheck-ALERT-AGENT[12335]: Connection Timeout
+May 30 16:49:30 DC1-SPINE-1 TCPCheck-ALERT-AGENT[12335]: HTTP HOST is down. Changing configuration.
+May 30 16:49:30 DC1-SPINE-1 TCPCheck-ALERT-AGENT[12335]: Applied Configuration changes from /mnt/flash/failed.conf
 .
 After Recover of HTTP Host...
 .
-Apr 13 21:56:21 DC1-SPINE1 ConfigAgent: %SYS-5-CONFIG_E: Enter configuration mode from console by local_command_api on command-api (unix:)
-Apr 13 21:56:21 DC1-SPINE1 ConfigAgent: %SYS-5-CONFIG_I: Configured from console by local_command_api on command-api (unix:)
-Apr 13 21:56:21 DC1-SPINE1 TCPCheck-ALERT-AGENT[18008]: HTTP host back up. Changing Configuration.
+May 30 16:49:57 DC1-SPINE-1 TCPCheck-ALERT-AGENT[12335]: HTTP host back up. Changing Configuration.
+May 30 16:49:57 DC1-SPINE-1 ConfigAgent: %SYS-5-CONFIG_E: Enter configuration mode from console by root on UnknownTty (UnknownIpAddr)
+May 30 16:49:57 DC1-SPINE-1 ConfigAgent: %SYS-5-CONFIG_I: Configured from console by root on UnknownTty (UnknownIpAddr)
+May 30 16:49:57 DC1-SPINE-1 ConfigAgent: %SYS-5-CONFIG_E: Enter configuration mode from console by root on UnknownTty (UnknownIpAddr)
+May 30 16:49:57 DC1-SPINE-1 ConfigAgent: %SYS-5-CONFIG_I: Configured from console by root on UnknownTty (UnknownIpAddr)
+May 30 16:49:57 DC1-SPINE-1 TCPCheck-ALERT-AGENT[12335]: Applied Configuration changes from /mnt/flash/recover.conf
 ```
 
 
