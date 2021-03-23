@@ -81,6 +81,7 @@ in your config change files. This is because, the EOS SDK eAPI interation module
 #                                                                        to display why the agent is disabled (e.g. missing fail/recovery file)
 # Version 2.3.1  - 05/30/2020 - Jeremy Georges -- jgeorges@arista.com -- Added additional exception handling and File Descriptor cleanup.
 #                                                                        Changed Syslog to LOCAL4 so logs show up in EOS logs.
+# Version 2.3.2 -  04/23/2021 - J. Georges -- Added verbose error logging for applyconfig
 #*************************************************************************************
 #
 #
@@ -88,7 +89,7 @@ in your config change files. This is because, the EOS SDK eAPI interation module
 # GLOBAL VARIABLES -        *
 #****************************
 __author__ = 'Jeremy Georges'
-__version__ = '2.3.1'
+__version__ = '2.3.2'
 
 
 #****************************
@@ -594,6 +595,7 @@ class TCPCheckAgent(eossdk.AgentHandler, eossdk.TimeoutHandler, eossdk.VrfHandle
                     syslog.syslog("Applied Configuration changes from %s" % CONF_FAIL)
                 else:
                     syslog.syslog("Unable to apply configuration changes from %s" % CONF_FAIL)
+                    syslog.syslog("%s" % applyconfig.error_message())
             except:
                 syslog.syslog("Unable to apply config via eAPI interaction module in EOS SDK.")
                 return 0
@@ -615,6 +617,7 @@ class TCPCheckAgent(eossdk.AgentHandler, eossdk.TimeoutHandler, eossdk.VrfHandle
                     syslog.syslog("Applied Configuration changes from %s" % CONF_RECOVER)
                 else:
                     syslog.syslog("Unable to apply configuration changes from %s" % CONF_RECOVER)
+                    syslog.syslog("%s" % applyconfig.error_message())
             except:
                 syslog.syslog("Unable to apply config via eAPI interaction module in EOS SDK.")
                 return 0
