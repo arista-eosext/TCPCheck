@@ -58,7 +58,7 @@ Config Option explanation:
 ```
 
 The CONF_FAIL and CONF_RECOVER files are just a list of commands to run at failure or at recovery. These commands
-must be full commands just as if you were configuration the switch from the CLI.
+should be **full commands** just as if you were configuration the switch from the CLI (i.e. not abbreviated commands).
 
 For example the above referenced /mnt/flash/failed.conf file could include the following commands, which would
 shutdown the BGP neighbor on failure:
@@ -158,7 +158,7 @@ must be changed to TCPCheck. The filename (agent name) and mount profile name mu
 
 An RPM has been included that allows you to easily just install TCPCheck as an extension and it takes care of all
 the file requirements. The RPM also installs the TCPCheck SDK app in /usr/local/bin. This is the preferred distribution 
-method for this application.
+method for this extension.
 
 This release has been tested on EOS 4.20.1, 4.20.4, 4.20.5 and 4.24.0.
 
