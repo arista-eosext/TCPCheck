@@ -451,6 +451,14 @@ class TCPCheckAgent(eossdk.AgentHandler, eossdk.TimeoutHandler, eossdk.VrfHandle
             if re.findall('^/', self.agentMgr.agent_option("URLPATH")):
                 # This means we have a preceeding /
                 FINALPATH="%s" % self.agentMgr.agent_option("URLPATH")
+            # Check if the URL Path is a full HTTP URI
+            elif re.findall('^http://', self.agentMgr.agent_option("URLPATH")):
+                # This means we have a preceeding http://
+                FINALPATH = "%s" % self.agentMgr.agent_option("URLPATH")
+            # Check if the URL Path is a full HTTPS URI
+            elif re.findall('^https://', self.agentMgr.agent_option("URLPATH")):
+                # This means we have a preceeding https://
+                FINALPATH = "%s" % self.agentMgr.agent_option("URLPATH")
             else:
                 FINALPATH="/%s" % self.agentMgr.agent_option("URLPATH")
         else:
