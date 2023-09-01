@@ -3,10 +3,10 @@
 The purpose of this utility is to test HTTP/HTTPS reachability, alert if its down and
 run a config change. On recovery run another list of config changes.
 
-# Author
+## Author
 Jeremy Georges - Arista Networks   - jgeorges@arista.com
 
-# Description
+## Description
 TCPCheck Utility
 
 
@@ -149,7 +149,8 @@ May 30 16:49:57 DC1-SPINE-1 TCPCheck-ALERT-AGENT[12335]: Applied Configuration c
 
 
 
-# INSTALLATION:
+## INSTALLATION
+
 Because newer releases of EOS require a SysdbMountProfile, you'll need two files - TCPCheck.py and TCPCheck.
 TCPCheck.py will need to go to an appropriate location such as /mnt/flash and TCPCheck will need to be placed in 
 /usr/lib/SysdbMountProfiles. The mount profile file name MUST match the python file name. In other words, if 
@@ -161,6 +162,44 @@ the file requirements. The RPM also installs the TCPCheck SDK app in /usr/local/
 method for this extension.
 
 This release has been tested on EOS 4.20.1, 4.20.4, 4.20.5 and 4.24.0.
+
+## Troubleshooting
+
+### Agent crash due to Windows CR LF
+
+If the agent is continuously crashing it might be caused by invalid characters in the python script. In the syslog outputs or `show logging` similar errors could be seen:
+
+```
+Aug 31 02:46:41 switch1 ProcMgr-worker: %PROCMGR-6-PROCESS_TERMINATED: 'TCPCheck' (PID=7319, status=32512) has terminated.
+Aug 31 02:46:41 switch1 ProcMgr-worker: %PROCMGR-3-PROCESS_DELAYRESTART: 'TCPCheck' (PID=7319) restarted too often! Delaying restart for 120.0
+```
+
+To troubleshoot further the agent logs should be checked with `bash cat /var/log/agents/<agentName>-<pid>.log` (substitute `<agentName>-<pid>` with the actual name of the file
+
+If the output is something similar as below, then it means the python script has an invalid `\r` which is the Windows carriage return (CR LF)
+
+```
+cat TCPCheck-Rack1-17880
+==== Output from /mnt/flash/TCPCheck [] (PID=17880) started Sep 1 15:00:00.00000 ===
+/usr/bin/env: 'python\r': No such file or directory
+```
+
+The solution is to convert the file to unix format, this can be done locally on EOS by editing the file with `vi` and typing `:set ff=unix`, so the steps would be:
+- drop down to global configuration mode and shutdown the daemon
+   ```configure
+      daemon TCPCheck
+        shutdown
+   ```
+- go to bash by typing `bash`
+- `vi /mnt/flash/TCPCheck`
+- type `:set ff=unix`
+- press Enter
+- press Esc
+- type `:wq!`
+- type `exit` to go back to EOS CLI and bring up the daemon again
+- `no shutdown`
+
+> Tip: When using Notepad++ to edit files always convert them to unix format by clicking on Edit - EOL Conversion and select Unix(LF) and save the file.
 
 License
 =======
