@@ -161,7 +161,8 @@ An RPM has been included that allows you to easily just install TCPCheck as an e
 the file requirements. The RPM also installs the TCPCheck SDK app in /usr/local/bin. This is the preferred distribution 
 method for this extension.
 
-This release has been tested on EOS 4.20.1, 4.20.4, 4.20.5 and 4.24.0.
+This release has been tested on EOS 4.20.1, 4.20.4, 4.20.5 and 4.24.0. It is NOT currently supported on any releases beyond 4.29+ which transitioned
+to Python3.
 
 ## Troubleshooting
 
