@@ -164,6 +164,9 @@ method for this extension.
 This release has been tested on EOS 4.20.1, 4.20.4, 4.20.5 and 4.24.0. It is NOT currently supported on any releases beyond 4.29+ which transitioned
 to Python3.
 
+Based on licensing, this is open source and this and other open-source tools are not supported directly by
+Arista Support. Support is best effort as it relates to extensions such as this one.
+
 ## Troubleshooting
 
 ### Agent crash due to Windows CR LF
